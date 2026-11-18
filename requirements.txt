@@ -3,3 +3,5 @@ matplotlib
 kivy-garden.matplotlib==0.1.1.dev0
 six
 setuptools
+requests
+python-dotenv
