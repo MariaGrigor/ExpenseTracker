@@ -23,6 +23,8 @@ from kivy.uix.label import Label
 from kivy.uix.popup import Popup
 from kivy.storage.jsonstore import JsonStore
 from kivy.lang import Builder
+from matplotlib.figure import Figure #Figure создаёт область для построения графика
+from kivy_garden.matplotlib.backend_kivyagg import FigureCanvasKivyAgg #FigureCanvasKivyAgg позволяет встроить график Matplotlib в окно Kivy.
 
 # Загружаем KV язык для описания интерфейса
 Builder.load_string('''
@@ -341,26 +343,64 @@ class MainScreen(Screen):
         self.store.put(key, **income)
         self.load_expenses()
 
-    def show_analytics(self):
-        """Показать аналитику расходов (заглушка)"""
-        categories = {}
-        for expense in self.ids.rv.data:
-            cat = expense['category']
-            categories[cat] = categories.get(cat, 0) + expense['amount']
 
-        content = BoxLayout(orientation='vertical', padding=10)
-        for category, total in categories.items():
-            content.add_widget(Label(
-                text=f"{category}: {total} руб.",
-                font_size=16
-            ))
+
+    def show_analytics(self):
+        """Графики доходов и расходов по категориям"""
+        expenses = {}
+        incomes = {}
+
+        for key in self.store.keys():
+            operation = self.store.get(key)
+            category = operation['category']
+            amount = operation['amount']
+            operation_type = operation.get('type', 'expense')
+
+            if operation_type == 'income':
+                incomes[category] = incomes.get(category, 0) + amount
+            else:
+                expenses[category] = expenses.get(category, 0) + amount
+
+        if not expenses and not incomes:
+            self.show_error_popup("Аналитика", "Нет данных")
+            return
+
+        fig = Figure(figsize=(10, 4))
+
+        # График расходов
+        ax1 = fig.add_subplot(121)
+        if expenses:
+            ax1.bar(expenses.keys(), expenses.values(), color='tomato')
+        else:
+            ax1.text(0.5, 0.5, 'Нет данных',
+                     ha='center', va='center', transform=ax1.transAxes)
+
+        ax1.set_title('Расходы по категориям')
+        ax1.set_ylabel('Сумма, руб.')
+        ax1.tick_params(axis='x', rotation=20)
+
+        # График доходов
+        ax2 = fig.add_subplot(122)
+        if incomes:
+            ax2.bar(incomes.keys(), incomes.values(), color='seagreen')
+        else:
+            ax2.text(0.5, 0.5, 'Нет данных',
+                     ha='center', va='center', transform=ax2.transAxes)
+
+        ax2.set_title('Доходы по категориям')
+        ax2.set_ylabel('Сумма, руб.')
+        ax2.tick_params(axis='x', rotation=20)
+
+        fig.subplots_adjust(bottom=0.25, wspace=0.4)
 
         popup = Popup(
-            title='Аналитика расходов по категориям',
-            content=content,
-            size_hint=(0.8, 0.6)
+            title='Аналитика доходов и расходов',
+            content=FigureCanvasKivyAgg(fig),
+            size_hint=(0.95, 0.75)
         )
         popup.open()
+
+
 
     def export_data(self):
         """Экспорт данных в CSV (демонстрация бизнес-функции)"""
