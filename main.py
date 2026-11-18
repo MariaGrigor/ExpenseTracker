@@ -38,16 +38,21 @@ Builder.load_string('''
     orientation: 'horizontal'
     padding: 10
     height: 60
+    
     Label:
         text: root.category
         size_hint_x: 0.3
+        color: 0, 0, 0, 1
+
     Label:
         text: root.description
         size_hint_x: 0.4
+        color: 0, 0, 0, 1
+
     Label:
         text: str(root.amount) + ' руб.'
         size_hint_x: 0.3
-        color: (1, 0, 0, 1) if root.amount > 0 else (0, 0.6, 0, 1)
+        color: (0, 0.6, 0, 1) if root.operation_type == 'income' else (1, 0, 0, 1)
 
 <ExpensesRV>:
     viewclass: 'ExpenseRow'
@@ -80,6 +85,13 @@ Builder.load_string('''
                 on_press: root.show_add_expense_popup()
                 background_color: 0.2, 0.6, 0.2, 1
 
+
+            Button:
+                text: 'Добавить доход'
+                on_press: root.show_add_income_popup()
+                background_color: 0.2, 0.5, 0.7, 1
+
+
             Button:
                 text: 'Аналитика'
                 on_press: root.show_analytics()
@@ -97,9 +109,24 @@ Builder.load_string('''
             color: 1, 0, 0, 1
             size_hint_y: 0.08
 
+        Label:
+            text: 'Общий доход: ' + str(root.total_income) + ' руб.'
+            font_size: 18
+            bold: True
+            color: 0, 1, 0, 1
+            size_hint_y: 0.08
+
+        Label:
+            text: 'Баланс: ' + str(root.balance) + ' руб.'
+            font_size: 18
+            bold: True
+            color: 1, 1, 1, 1
+            size_hint_y: 0.08
+
+
         ExpensesRV:
             id: rv
-            size_hint_y: 0.67
+            size_hint_y: 0.51
 
 <AddExpensePopup>:
     size_hint: 0.8, 0.6
@@ -149,6 +176,54 @@ Builder.load_string('''
                 text: 'Сохранить'
                 on_press: root.save_expense()
                 background_color: 0.2, 0.6, 0.2, 1
+
+<AddIncomePopup>:
+    size_hint: 0.8, 0.6
+    title: 'Добавить доход'
+
+    BoxLayout:
+        orientation: 'vertical'
+        padding: 20
+        spacing: 10
+
+        Label:
+            text: 'Категория дохода:'
+
+        Spinner:
+            id: category_spinner
+            text: 'Выберите категорию'
+            values: ['Продажи', 'Услуги', 'Прочее']
+            size_hint_y: 0.15
+
+        Label:
+            text: 'Описание:'
+
+        TextInput:
+            id: description_input
+            multiline: False
+            size_hint_y: 0.15
+
+        Label:
+            text: 'Сумма (руб.):'
+
+        TextInput:
+            id: amount_input
+            multiline: False
+            input_filter: 'float'
+            size_hint_y: 0.15
+
+        BoxLayout:
+            orientation: 'horizontal'
+            spacing: 10
+            size_hint_y: 0.2
+
+            Button:
+                text: 'Отмена'
+                on_press: root.dismiss()
+
+            Button:
+                text: 'Сохранить'
+                on_press: root.save_income()
 ''')
 
 # --- Бизнес-логика и модели данных ---
@@ -158,6 +233,7 @@ class ExpenseRow(RecycleDataViewBehavior, BoxLayout):
     category = StringProperty('')
     description = StringProperty('')
     amount = NumericProperty(0)
+    operation_type = StringProperty('expense')
     selected = BooleanProperty(False)
     index = None
 
@@ -181,38 +257,55 @@ class ExpensesRV(RecycleView):
 
 class MainScreen(Screen):
     """Главный экран приложения"""
-    total_expenses = NumericProperty(0)
+    total_expenses = NumericProperty(0) #total_expenses — общая сумма расходов (уже была)
+    total_income = NumericProperty(0) #total_income — общая сумма доходов (новая)
+    balance = NumericProperty(0) #balance — разница между доходами и расходами (новая)
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.store = JsonStore('expenses.json')
         self.load_expenses()
 
-    def load_expenses(self):
-        """Загрузка расходов из локального хранилища"""
-        expenses = []
-        total = 0
 
-        if os.path.exists('expenses.json'):
-            with open('expenses.json', 'r', encoding='utf-8') as f:
-                try:
-                    data = json.load(f)
-                    for key, expense in data.items():
-                        expenses.append({
-                            'category': expense.get('category', ''),
-                            'description': expense.get('description', ''),
-                            'amount': expense.get('amount', 0)
-                        })
-                        total += expense.get('amount', 0)
-                except Exception:
-                    pass
+    def load_expenses(self):
+        """Загрузка операций и расчет баланса"""
+        expenses = []
+        total_expenses = 0
+        total_income = 0
+
+        for key in self.store.keys():
+            operation = self.store.get(key)
+            amount = float(operation.get('amount', 0))
+
+            # Старые записи считаются расходами
+            operation_type = operation.get('type', 'expense')
+
+            if operation_type == 'income':
+                total_income += amount
+            else:
+                total_expenses += amount
+
+            expenses.append({
+                'category': operation.get('category', ''),
+                'description': operation.get('description', ''),
+                'amount': amount,
+                'operation_type': operation_type
+            })
 
         self.ids.rv.data = expenses
-        self.total_expenses = total
+        self.total_expenses = total_expenses
+        self.total_income = total_income
+        self.balance = total_income - total_expenses
+
 
     def show_add_expense_popup(self):
         """Показать попап добавления расхода"""
         popup = AddExpensePopup(main_screen=self)
+        popup.open()
+
+    def show_add_income_popup(self):
+        """Открытие формы добавления дохода"""
+        popup = AddIncomePopup(main_screen=self)
         popup.open()
 
     def add_expense(self, category, description, amount):
@@ -232,6 +325,21 @@ class MainScreen(Screen):
 
         except ValueError:
             self.show_error_popup("Ошибка", "Введите корректную сумму")
+
+
+    def add_income(self, category, description, amount):
+        """Сохранение дохода"""
+        income = {
+            'type': 'income',
+            'category': category,
+            'description': description,
+            'amount': amount,
+            'date': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        }
+
+        key = f"income_{datetime.now().timestamp()}"
+        self.store.put(key, **income)
+        self.load_expenses()
 
     def show_analytics(self):
         """Показать аналитику расходов (заглушка)"""
@@ -307,6 +415,48 @@ class AddExpensePopup(Popup):
             return
 
         self.main_screen.add_expense(category, description, amount)
+        self.dismiss()
+
+
+class AddIncomePopup(Popup):
+    """Форма добавления дохода"""
+
+    def __init__(self, main_screen, **kwargs):
+        super().__init__(**kwargs)
+        self.main_screen = main_screen
+
+    def save_income(self):
+        category = self.ids.category_spinner.text
+        description = self.ids.description_input.text.strip()
+        amount = self.ids.amount_input.text
+
+        if category == 'Выберите категорию':
+            self.main_screen.show_error_popup(
+                "Ошибка", "Выберите категорию"
+            )
+            return
+
+        if not description or not amount:
+            self.main_screen.show_error_popup(
+                "Ошибка", "Заполните все поля"
+            )
+            return
+
+        try:
+            amount = float(amount)
+        except ValueError:
+            self.main_screen.show_error_popup(
+                "Ошибка", "Введите корректную сумму"
+            )
+            return
+
+        if not 0 < amount < float('inf'):
+            self.main_screen.show_error_popup(
+                "Ошибка", "Сумма должна быть положительной"
+            )
+            return
+
+        self.main_screen.add_income(category, description, amount)
         self.dismiss()
 
 
