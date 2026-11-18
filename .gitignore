@@ -5,3 +5,4 @@ __pycache__/
 .DS_Store
 expenses.json
 expenses_export.csv
+.env
